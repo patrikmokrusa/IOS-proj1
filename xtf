@@ -1,0 +1,121 @@
+#!/bin/sh
+flags(){
+    counter=0
+    while test $# -gt 0
+        do
+            case "$1" in
+            -a)
+                shift
+                atime=$1
+                counter=$((counter+2))
+                ;;
+            -b)
+                shift
+                btime=$1
+                counter=$((counter+2))
+                ;;
+            -c)
+                shift
+                currency=$1
+                counter=$((counter+2))
+                
+                ;;
+            -h|--help)
+                printf "format vstupu:\n xtf [-h|--help] [FILTR] [PŘÍKAZ] UŽIVATEL LOG [LOG2 [...]\n"
+                printf "seznam filtru:\n -a DATETIME (format DATETIME: YYYY-MM-DD HH:MM:SS)\n -b DATETIME\n -c CURRENCY\n -h a --help\n"
+                printf "seznam prikazu:\n list\n list-currency\n status\n profit (moznost pouzit extern XTF_PROFIT=HODNOTA pro nastaveni marze)\n"
+                printf "format logu:\n JMENO UZIVATELE;DATUM A CAS;MENA;HODNOTA\n"
+                exit 1
+                ;;
+            *) 
+                ;;
+            esac
+
+            shift
+        done
+}
+currency=0
+atime=0
+btime="9999-99-99 99:99:99"
+counter=0
+
+flags "$@"
+
+# echo "atime $atime btime $btime currency $currency"
+for i in $(seq 1 $counter);
+do
+    shift
+done
+
+prikaz=$1
+# echo "$prikaz"
+shift
+user=$1
+# echo "$user"
+shift
+file_contents=""
+
+while true
+    do
+    if [ -z "$1" ]
+    then
+        break
+    fi
+
+    case "$1" in
+    *.gz | *.tgz ) 
+        # echo "case1 :$1"
+        file=$file" "$1
+        file_contents=$file_contents"\n"$( gunzip -ck "$1" )
+        ;;
+    *)
+        # echo "case2 :$1"
+        file=$file" "$1
+        file_contents=$file_contents"\n"$( cat "$1" )
+        ;;
+    esac
+    shift
+    done
+
+    # echo "var $file"
+    # echo "contents\n$file_contents"
+
+
+XTF_PROFIT="${XTF_PROFIT:=20}"
+PROFIT=1.$XTF_PROFIT
+# echo $PROFIT
+
+case "$prikaz" in
+    list)
+        echo "$file_contents" |
+        awk /"$user"/ | 
+        awk -F ';' '{if (atime<$2 && $2<btime) {print}}' atime="$atime" btime="$btime" |
+        awk /"$currency"/
+        ;;
+    list-currency)
+        echo "$file_contents" |
+        awk /"$user"/ | 
+        awk -F ';' '{if (atime<$2 && $2<btime) {print}}' atime="$atime" btime="$btime" |
+        awk -F';' '{print $3}' | 
+        sort -u
+        ;;
+    status)
+        echo "$file_contents" |
+        awk /"$user"/ | 
+        awk -F ';' '{if (atime<$2 && $2<btime) {print}}' atime="$atime" btime="$btime" |
+        awk -F';' '{ seen[$3] += $4 } END { for (i in seen) printf "%s : %.4f\n", i, seen[i]  }' | 
+        sort
+        ;;
+    profit)
+        echo "$file_contents" |
+        awk /"$user"/ | 
+        awk -F ';' '{if (atime<$2 && $2<btime) {print}}' atime="$atime" btime="$btime" |
+        awk -F';' '{ seen[$3] += $4 } END { for (i in seen) printf "%s : %.4f\n", i, seen[i] }' | 
+        awk '{$3=($3>0)?$3*a:$3}1' a="$PROFIT" | 
+        sort
+        ;;
+    *)  
+        # echo "$file_contents" |
+        awk /"$prikaz"/ "$user"| awk /"$currency"/
+        ;;
+esac
